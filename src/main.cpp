@@ -62,7 +62,7 @@ class XJBG {
   int m_stationNum;                   // 站点数目
   int m_trackNum;                     // 轨道数目
   int m_trainNum;                     // 列车数目
-  int m_capacity;                     // 单个列车容量
+  double m_capacity;                  // 单个列车容量
   int m_goodNum;                      // 货物数目
   std::vector<Station *> m_stations;  // 站点
   std::vector<Track *> m_tracks;      // 轨道
@@ -84,16 +84,15 @@ void XJBG::Print() {
 
 void XJBG::LoadData() {
   std::string line;
-  std::getline(std::cin, line);
-  std::stringstream ss(line);
+  std::cin >> line;
   char c;
+  std::stringstream ss(line);
   ss >> m_stationNum >> c >> m_trackNum >> c >> m_trainNum >> c >> m_capacity;
   for (int i = 0; i < m_stationNum; ++i) {
-    std::getline(std::cin, line);
-    line = line.substr(0, line.size() - 1);
+    std::cin >> line;
     int pos = line.find(',');
     std::string x = line.substr(0, pos);
-    int y = std::stoi(line.substr(pos + 1, line.size() - pos - 1));
+    int y = std::stod(line.substr(pos + 1, line.size() - pos - 1));
     Station *station = new Station;
     station->strID = x;
     station->ID = i;
@@ -102,8 +101,7 @@ void XJBG::LoadData() {
     HashStation[station->strID] = station->ID;
   }
   for (int i = 0; i < m_trackNum; ++i) {
-    std::getline(std::cin, line);
-    line = line.substr(0, line.size() - 1);
+    std::cin >> line;
     int pos = line.find(',');
     std::string x = line.substr(0, pos);
     line = line.substr(pos + 1, line.size() - pos - 1);
@@ -113,16 +111,15 @@ void XJBG::LoadData() {
     Track *track = new Track;
     track->strID = x;
     track->ID = i;
-    track->station0 = m_stations[HashStation[x]];
-    track->station1 = m_stations[HashStation[y]];
+    track->station0 = m_stations[HashStation[y]];
+    track->station1 = m_stations[HashStation[z]];
     m_tracks.emplace_back(track);
     HashTrack[track->strID] = track->ID;
   }
-  std::getline(std::cin, line);
+  std::cin >> line;
   m_goodNum = std::stoi(line);
   for (int i = 0; i < m_goodNum; ++i) {
-    std::getline(std::cin, line);
-    line = line.substr(0, line.size() - 1);
+    std::cin >> line;
     int pos = line.find(',');
     std::string id = line.substr(0, pos);
     line = line.substr(pos + 1, line.size() - pos - 1);
@@ -133,7 +130,7 @@ void XJBG::LoadData() {
     std::string ed = line.substr(0, pos);
     line = line.substr(pos + 1, line.size() - pos - 1);
     pos = line.find(',');
-    double x = std::stoi(line.substr(0, pos));
+    double x = std::stod(line.substr(0, pos));
     line = line.substr(pos + 1, line.size() - pos - 1);
     std::vector<Station *> vt;
     while (true) {
