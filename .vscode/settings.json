@@ -65,6 +65,9 @@
     "utility": "cpp",
     "deque": "cpp",
     "iostream": "cpp",
-    "vector": "cpp"
+    "vector": "cpp",
+    "ios": "cpp",
+    "iosfwd": "cpp",
+    "queue": "cpp"
   }
 }
