@@ -19,7 +19,8 @@ struct Station {
       : strID(_strID), ID(_ID), pickers(_pickers), leftPickers(_pickers) {}
   void Print() {
     std::cerr << "@ Station: (";
-    std::cerr << strID << ", " << ID << ", " << pickers << ")\n";
+    std::cerr << strID << ", " << ID << ", " << pickers << ", " << leftPickers
+              << ")\n";
   }
   std::string strID;  // 站点ID
   int ID;             // 映射ID
@@ -47,6 +48,19 @@ struct Road {
   std::bitset<80> &GetPickerStatus(const int &ID) {
     if (ID == station0->ID) return pickerStatusFrom;
     return pickerStatusTo;
+  }
+  void SubPicker(const int &ID, int pos) {
+    if (ID == station0->ID) {
+      if (!pickerStatusFrom[pos]) {
+        --station0->leftPickers;
+        pickerStatusFrom[pos] = 1;
+      }
+    } else {
+      if (!pickerStatusTo[pos]) {
+        --station1->leftPickers;
+        pickerStatusTo[pos] = 1;
+      }
+    }
   }
 
   std::string strID;                 // 轨道ID
@@ -99,12 +113,12 @@ struct Good {
 
 class XJBG {
  public:
-  void Print();                            // 打印调试信息
-  void LoadData();                         // 加载数据
-  void BuildGraph();                       // 构建图
-  void ArrangePath();                      // 安排路径
-  bool Dijkstra(Good *good, int laneNum);  // 找路
-  void OuputAnswer();                      // 输出答案
+  void Print();               // 打印调试信息
+  void LoadData();            // 加载数据
+  void BuildGraph();          // 构建图
+  void ArrangePath();         // 安排路径
+  bool Dijkstra(Good *good);  // 找路
+  void OuputAnswer();         // 输出答案
 
  private:
   void splitString(const std::string &s, std::vector<std::string> &v,
@@ -209,7 +223,7 @@ void XJBG::BuildGraph() {
   }
   std::sort(m_goods.begin(), m_goods.end(),
             [&](const Good *g1, const Good *g2) {
-              return g1->quality < g2->quality;
+              return g1->quality > g2->quality;
             });
 }
 
@@ -242,59 +256,102 @@ void XJBG::OuputAnswer() {
   }
 }
 
-bool XJBG::Dijkstra(Good *good, int laneNum) {
-  std::queue<Station *> Q;
-  Q.push(good->start);
+bool XJBG::Dijkstra(Good *good) {
+  struct Node {
+    Station *station;  // 站点
+    int dis;           // 路径长度
+    int left;          // 总共剩多少picker
+    int last;          // 上次个节点是否使用picker
+    bool operator<(const Node &r) const {
+      if (dis == r.dis) return left < r.left;
+      return dis > r.dis;
+    }
+  };
+
+  std::priority_queue<Node> Q;
   std::vector<bool> vis(m_StationNum, false);
-  std::vector<int> prevc(m_StationNum, 0);
-  vis[good->start->ID] = true;
+  std::vector<int> Dis(m_StationNum, 1000000);
+  std::vector<int> Left(m_StationNum, 0);
+  int pre[m_StationNum][2];
+
+  for (int i = 0; i < m_LaneNum; ++i) {
+    Q.push(Node{good->start, 0, good->start->leftPickers, 0});
+  }
+  Dis[good->start->ID] = 0;
+  Left[good->start->ID] = good->start->leftPickers;
+
+  auto judge = [&](int u, int v, int d) {
+    if (Dis[u] + 1 < Dis[v]) {
+      Dis[v] = Dis[u] + 1;
+      Left[v] = Left[u] + d;
+      return true;
+    }
+    if (Dis[u] + 1 == Dis[v] && Left[u] + d > Left[v]) {
+      Left[v] = Left[u] + d;
+      return true;
+    }
+    return false;
+  };
+
   bool ok = false;
   while (!Q.empty()) {
-    Station *head = Q.front();
+    auto head = Q.top();
     Q.pop();
-    if (head->ID == good->end->ID) {
+    if (head.station->ID == good->end->ID) {
       ok = true;
       break;
     }
-    for (auto &it : Graph[head->ID]) {
+    if (vis[head.station->ID]) continue;
+    vis[head.station->ID] = true;
+
+    int u = head.station->ID;
+    for (auto &it : Graph[head.station->ID]) {
       Station *nxtsta = it.first;
       Road *nxtroad = it.second;
-      // 已经拓展过
-      if (vis[nxtsta->ID]) continue;
-      // 重量超载
-      if (nxtroad->loadedWeight[laneNum] + good->quality > m_Capacity) continue;
-      auto &pickFrom = nxtroad->GetPickerStatus(head);
-      auto &pickTo = nxtroad->GetPickerStatus(nxtsta);
-      // 不需要捡货员
-      if (pickTo[laneNum] && pickFrom[laneNum]) {
-        vis[nxtsta->ID] = true;
-        prevc[nxtsta->ID] = head->ID;
-        Q.push(nxtsta);
-        continue;
+      int v = nxtsta->ID;
+
+      if (vis[v]) continue;
+      const auto &pickFrom = nxtroad->GetPickerStatus(head.station);
+      const auto &pickTo = nxtroad->GetPickerStatus(nxtsta);
+
+      for (int i = 0; i < m_LaneNum; ++i) {
+        if (nxtroad->loadedWeight[i] + good->quality > m_Capacity) continue;
+        if (pickTo[i] && pickFrom[i] && judge(u, v, nxtsta->leftPickers)) {
+          pre[nxtsta->ID][0] = head.station->ID;
+          pre[nxtsta->ID][1] = i;
+          Q.push(Node{nxtsta, Dis[v], Left[v], 0});
+          continue;
+        }
+        if (!pickFrom[i] && head.station->leftPickers - head.last < 1) continue;
+        if (!pickTo[i] && nxtsta->leftPickers < 1) continue;
+        if (pickTo[i]) {
+          if (judge(u, v, nxtsta->leftPickers)) {
+            pre[nxtsta->ID][0] = head.station->ID;
+            pre[nxtsta->ID][1] = i;
+            Q.push(Node{nxtsta, Dis[v], Left[v], 0});
+          }
+        } else if (judge(u, v, nxtsta->leftPickers - 1)) {
+          pre[nxtsta->ID][0] = head.station->ID;
+          pre[nxtsta->ID][1] = i;
+          Q.push(Node{nxtsta, Dis[v], Left[v], 1});
+        }
       }
-      if (head->leftPickers <= 0 && !pickFrom[laneNum]) continue;
-      if (nxtsta->leftPickers <= 0 && !pickTo[laneNum]) continue;
-      if (!pickFrom[laneNum]) --head->leftPickers;
-      if (!pickTo[laneNum]) --nxtsta->leftPickers;
-      pickFrom[laneNum] = pickTo[laneNum] = 1;
-      vis[nxtsta->ID] = true;
-      prevc[nxtsta->ID] = head->ID;
-      Q.push(nxtsta);
     }
   }
   if (!ok) return false;
   int cur = good->end->ID;
   do {
-    int now = prevc[cur];
+    int now = pre[cur][0];
+    int lane = pre[cur][1];
     Road *road = RoadTable[now][cur];
-    road->loadedWeight[laneNum] += good->quality;
-    if (road->loadedWeight[0] > m_Capacity) {
-      std::cerr << "Error [Train Weight OverLoad!]\n";
-      good->Print();
-      road->Print();
+    road->loadedWeight[lane] += good->quality;
+    if (road->loadedWeight[lane] > m_Capacity) {
+      std::cerr << "Error OverLoad! " << road->loadedWeight[lane] << "\n";
     }
+    road->SubPicker(cur, lane);
+    road->SubPicker(now, lane);
     good->roadPath.emplace_back(road);
-    good->lanePath.emplace_back(laneNum);
+    good->lanePath.emplace_back(lane);
     cur = now;
   } while (cur != good->start->ID);
   return true;
@@ -303,16 +360,21 @@ bool XJBG::Dijkstra(Good *good, int laneNum) {
 void XJBG::ArrangePath() {
   int count = 0;
   for (auto &good : m_goods) {
-    for (int i = 0; i < m_LaneNum; ++i) {
-      if (good->requiredStations.empty()) {
-        if (this->Dijkstra(good, i)) {
-          ++count;
-          break;
-        }
-      }
+    if (!good->requiredStations.empty()) continue;
+    if (this->Dijkstra(good)) {
+      ++count;
+    }
+  }
+#ifdef TEST
+  for (auto &it : m_stations) {
+    if (it->leftPickers < 0) {
+      std::cerr << "Error: ";
+      it->Print();
+      break;
     }
   }
   std::cerr << "@ dijkstra count: " << count << "\n";
+#endif
 }
 
 int main() {
